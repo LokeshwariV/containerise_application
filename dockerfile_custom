@@ -1,0 +1,12 @@
+FROM ubuntu:latest
+
+RUN     apt-get update \
+    &&  apt-get install -y \
+        curl \
+        python3 \
+        docker.io \
+        unzip \
+        jq
+
+COPY ./jfrog /usr/local/bin/jfrog
+RUN chmod u+x /usr/local/bin/jfrog

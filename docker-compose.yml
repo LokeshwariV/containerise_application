@@ -1,0 +1,25 @@
+version: '3.5'
+services:
+  py-web-app:
+    container_name: timestamp-api-container
+    image: py-web-app
+    ports:
+      - "5000:5000"
+    depends_on:
+      - redis-db
+    env_file:
+      - ./env_vars/.redis_endpoint
+      - ./env_vars/.redis_port
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  redis-db:
+    image: redis
+    container_name: redis-container
+    volumes:
+      - redis-data:/data
+    stop_grace_period: 30s
+    restart: unless-stopped
+      
+volumes:
+  redis-data:

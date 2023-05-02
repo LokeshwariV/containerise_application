@@ -1,0 +1,80 @@
+variables:
+  VERSION: 1.0.0
+  ARTIFACTORY_PROJECT: py-web-app-releases
+  DEPLOY_PATH: /app
+
+default:
+  image: artifactory.private.com/docker-virtual/custom-docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - apk add --update curl && rm -rf /var/cache/apk/*
+    - cd /usr/local/bin/jfrog
+    - ./jf --version
+    - ./jf config add  artifactory-server --url=$ARTFACTORY_URL --user=$ARTIFACTORY_USER --password=$ARTIFACTORY_PASS
+    - jf config show
+
+stages:
+  - build
+  - test
+  - release
+  - deploy
+
+docker_build:
+  stage: build
+  script:
+    - docker build -t py-web-app:"$VERSION" .
+    - docker pull redis
+  artifacts:
+    when: always
+    expire_in: 1 day
+    paths:
+      - /
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_APPROVED == true
+
+test:
+  stage: test
+  before_script:
+    - pip install -r requirements.txt
+  script:
+    - docker-compose up -d
+    - sleep 5
+    - pytest -v --junitxml=test-report.xml
+    - docker-compose down
+  allow_failure: true
+  artifacts:
+      when: always
+      paths:
+          - test-reports.xml
+      expire_in: 1 day
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_APPROVED == true
+
+artifactory_release:
+  stage: release
+  script:
+    - docker save -o py-web-app.tar py-web-app
+    - docker save -o redis.tar redis
+    - zip -r py-web-app-${VERSION}.zip py-web-app.tar redis.tar docker-compose.yml
+    - jfrog rt u py-web-app-${VERSION}.zip ${ARTIFACTORY_PROJECT} --recursive=true
+  artifacts:
+    when: always
+    expire_in: 1 day
+    paths:
+      - /*.tar
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_APPROVED == true
+
+deploy:
+  stage: deploy
+  script:
+    - jfrog rt dl ${ARTIFACTORY_PROJECT}}/py-web-app-${VERSION}.zip --flat
+    - sshpass -p "${SSH_PASSWORD}" scp py-web-app-${VERSION}.zip "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/py-web-app-${VERSION}.zip"
+    - sshpass -p "${SSH_PASSWORD}" ssh "${SSH_USER}@${SSH_HOST}" "mkdir ${DEPLOY_PATH} && ucd ${DEPLOY_PATH} && unzip py-web-app-${VERSION}.zip && docker load --input ${DEPLOY_PATH} && docker-compose up -d"
+  only:
+    - master
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
