@@ -16,6 +16,8 @@ services:
   redis-db:
     image: redis
     container_name: redis-container
+    ports:
+      - "6379:6379"
     volumes:
       - redis-data:/data
     stop_grace_period: 30s
